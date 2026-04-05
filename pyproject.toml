@@ -23,6 +23,8 @@ dependencies = [
     "matplotlib",
     "seaborn",
     "dotenv",
+    "stata_setup",
+    "pystata",
 ]
 
 [project.optional-dependencies]
