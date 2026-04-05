@@ -49,7 +49,7 @@ def build_request_panel(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
         "timestamp", "submit_date", "block_number",
     ]].merge(fin_map, on="request_id", how="left")
 
-    panel["is_finalized"]  = panel["fin_timestamp"].notna()
+    panel["is_finalized"]  = panel["fin_timestamp"].notna().astype(int)  # 1/0 for Stata
     panel["wait_seconds"]  = panel["fin_timestamp"] - panel["timestamp"]
     panel["wait_days"]     = panel["wait_seconds"] / 86_400
 
