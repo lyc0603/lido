@@ -1,21 +1,5 @@
 """
 Visualize and validate stETH and ETH price data fetched from CoinMarketCap.
-
-Checks:
-  1. Coverage & gaps   – missing dates, date range, row counts
-  2. Value sanity      – zero/negative prices, zero market cap, stETH/ETH ratio bounds
-  3. Volume spikes     – days where volume_24h > 5× rolling median
-  4. Duplicate dates
-
-Figures saved to figures/:
-  price_eth_full.png          – ETH price full history (log scale)
-  price_steth_eth_overlap.png – stETH vs ETH price since stETH launch (log scale)
-  steth_eth_ratio.png         – stETH / ETH price ratio (parity = 1.0)
-  volume.png                  – 30-day rolling volume for both assets
-  market_cap.png              – market cap comparison
-
-Usage:
-  python scripts/validate/validate_price_data.py
 """
 
 import sys
@@ -29,25 +13,27 @@ import seaborn as sns
 
 from environ.constants import DATA_PATH as DATA_DIR, FIGURE_PATH as FIG_DIR
 
-# ── Style ─────────────────────────────────────────────────────────────────────
+# Style
 
 sns.set_theme(style="whitegrid", palette="muted")
 plt.rcParams.update({"figure.dpi": 150, "figure.figsize": (12, 4)})
 
-BLUE   = "#2563EB"
+BLUE = "#2563EB"
 ORANGE = "#EA580C"
 
 
-# ── Loaders ───────────────────────────────────────────────────────────────────
+# Loaders
+
 
 def load(name: str) -> pd.DataFrame:
     path = DATA_DIR / f"{name}_price_raw.csv"
-    df = pd.read_csv(path, parse_dates=["date"])
-    df = df.sort_values("date").reset_index(drop=True)
+    df = pd.read_csv(path, parse_dates=["timestamp"])
+    df = df.sort_values("timestamp").reset_index(drop=True)
     return df
 
 
-# ── Validation ────────────────────────────────────────────────────────────────
+# Validation
+
 
 def validate(df: pd.DataFrame, name: str) -> bool:
     label = name.upper()
@@ -55,25 +41,27 @@ def validate(df: pd.DataFrame, name: str) -> bool:
 
     # Basic info
     print(f"\n{'─'*56}")
-    print(f"  {label}  ({len(df):,} rows,  {df['date'].min().date()} → {df['date'].max().date()})")
+    print(
+        f"  {label}  ({len(df):,} rows,  {df['timestamp'].min()} → {df['timestamp'].max()})"
+    )
     print(f"{'─'*56}")
 
     # 1. Duplicates
-    dupes = df["date"].duplicated().sum()
+    dupes = df["timestamp"].duplicated().sum()
     if dupes:
-        print(f"  ✗  Duplicate dates: {dupes}")
+        print(f"  ✗  Duplicate timestamps: {dupes}")
         ok = False
     else:
-        print(f"  ✓  No duplicate dates")
+        print(f"  ✓  No duplicate timestamps")
 
-    # 2. Missing dates (calendar gaps)
-    full_range = pd.date_range(df["date"].min(), df["date"].max(), freq="D")
-    missing = full_range.difference(df["date"])
+    # 2. Missing hours (calendar gaps)
+    full_range = pd.date_range(df["timestamp"].min(), df["timestamp"].max(), freq="h")
+    missing = full_range.difference(df["timestamp"])
     if len(missing):
-        print(f"  ✗  Missing calendar dates: {len(missing)}  (first: {missing[0].date()})")
+        print(f"  ✗  Missing hourly timestamps: {len(missing)}  (first: {missing[0]})")
         ok = False
     else:
-        print(f"  ✓  No calendar date gaps")
+        print(f"  ✓  No hourly gaps")
 
     # 3. Zero / negative price
     bad_price = (df["price_usd"] <= 0).sum()
@@ -90,15 +78,17 @@ def validate(df: pd.DataFrame, name: str) -> bool:
     else:
         print(f"  ✓  All market caps non-zero")
 
-    # 5. Volume spikes (> 5× 30-day rolling median)
-    roll_med = df["volume_24h_usd"].rolling(30, min_periods=1).median()
+    # 5. Volume spikes (> 5× 720-hour rolling median, ~30-day window)
+    roll_med = df["volume_24h_usd"].rolling(720, min_periods=1).median()
     spikes = (df["volume_24h_usd"] > 5 * roll_med).sum()
     print(f"  {'⚠' if spikes else '✓'}  Volume spikes (>5× rolling median): {spikes}")
 
     # 6. Price range summary
-    print(f"\n  Price (USD): min={df['price_usd'].min():,.4f}  "
-          f"max={df['price_usd'].max():,.2f}  "
-          f"latest={df['price_usd'].iloc[-1]:,.4f}")
+    print(
+        f"\n  Price (USD): min={df['price_usd'].min():,.4f}  "
+        f"max={df['price_usd'].max():,.2f}  "
+        f"latest={df['price_usd'].iloc[-1]:,.4f}"
+    )
 
     return ok
 
@@ -109,25 +99,26 @@ def validate_ratio(eth: pd.DataFrame, steth: pd.DataFrame) -> None:
     print(f"{'─'*56}")
 
     merged = pd.merge(
-        steth[["date", "price_usd"]].rename(columns={"price_usd": "steth"}),
-        eth[["date", "price_usd"]].rename(columns={"price_usd": "eth"}),
-        on="date",
+        steth[["timestamp", "price_usd"]].rename(columns={"price_usd": "steth"}),
+        eth[["timestamp", "price_usd"]].rename(columns={"price_usd": "eth"}),
+        on="timestamp",
     )
     merged["ratio"] = merged["steth"] / merged["eth"]
 
     above_par = (merged["ratio"] > 1.0).sum()
-    below_99  = (merged["ratio"] < 0.99).sum()
+    below_99 = (merged["ratio"] < 0.99).sum()
     min_ratio = merged["ratio"].min()
-    min_date  = merged.loc[merged["ratio"].idxmin(), "date"].date()
+    min_ts = merged.loc[merged["ratio"].idxmin(), "timestamp"]
 
     print(f"  Ratio range: {min_ratio:.6f} → {merged['ratio'].max():.6f}")
-    print(f"  Days above parity (>1.000): {above_par}")
-    print(f"  Days below 0.990:           {below_99}")
-    print(f"  Largest discount: {(1 - min_ratio)*100:.2f}%  on {min_date}")
+    print(f"  Hours above parity (>1.000): {above_par}")
+    print(f"  Hours below 0.990:           {below_99}")
+    print(f"  Largest discount: {(1 - min_ratio)*100:.2f}%  at {min_ts}")
     print(f"  Latest ratio:     {merged['ratio'].iloc[-1]:.6f}")
 
 
-# ── Plots ─────────────────────────────────────────────────────────────────────
+# Plots
+
 
 def _save(fig: plt.Figure, name: str) -> None:
     FIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -141,12 +132,25 @@ def plot_price(eth: pd.DataFrame, steth: pd.DataFrame) -> None:
     """Single unified price chart: ETH from 2015, stETH from its launch."""
     fig, ax = plt.subplots()
 
-    ax.semilogy(eth["date"],   eth["price_usd"],   color=BLUE,   linewidth=0.9, label="ETH")
-    ax.semilogy(steth["date"], steth["price_usd"], color=ORANGE, linewidth=0.9, label="stETH")
+    ax.semilogy(
+        eth["timestamp"], eth["price_usd"], color=BLUE, linewidth=0.5, label="ETH"
+    )
+    ax.semilogy(
+        steth["timestamp"],
+        steth["price_usd"],
+        color=ORANGE,
+        linewidth=0.5,
+        label="stETH",
+    )
 
     # Shade the pre-stETH period to make the difference in history visible
-    ax.axvspan(eth["date"].min(), steth["date"].min(),
-               alpha=0.06, color=BLUE, label="_nolegend_")
+    ax.axvspan(
+        eth["timestamp"].min(),
+        steth["timestamp"].min(),
+        alpha=0.06,
+        color=BLUE,
+        label="_nolegend_",
+    )
 
     ax.set_title("ETH and stETH – price history (log scale)")
     ax.set_ylabel("Price (USD)")
@@ -160,14 +164,14 @@ def plot_price(eth: pd.DataFrame, steth: pd.DataFrame) -> None:
 
 def plot_ratio(eth: pd.DataFrame, steth: pd.DataFrame) -> None:
     merged = pd.merge(
-        steth[["date", "price_usd"]].rename(columns={"price_usd": "steth"}),
-        eth[["date", "price_usd"]].rename(columns={"price_usd": "eth"}),
-        on="date",
+        steth[["timestamp", "price_usd"]].rename(columns={"price_usd": "steth"}),
+        eth[["timestamp", "price_usd"]].rename(columns={"price_usd": "eth"}),
+        on="timestamp",
     )
     merged["ratio"] = merged["steth"] / merged["eth"]
 
     fig, ax = plt.subplots()
-    ax.plot(merged["date"], merged["ratio"], color=ORANGE, linewidth=0.8)
+    ax.plot(merged["timestamp"], merged["ratio"], color=ORANGE, linewidth=0.4)
     ax.axhline(1.0, color="black", linewidth=0.6, linestyle="--", label="Parity (1.0)")
     ax.set_title("stETH / ETH price ratio")
     ax.set_ylabel("Ratio")
@@ -177,31 +181,39 @@ def plot_ratio(eth: pd.DataFrame, steth: pd.DataFrame) -> None:
     # Annotate deepest discount
     idx = merged["ratio"].idxmin()
     ax.annotate(
-        f"  {merged.loc[idx,'ratio']:.3f}\n  {merged.loc[idx,'date'].strftime('%b %Y')}",
-        xy=(merged.loc[idx, "date"], merged.loc[idx, "ratio"]),
-        fontsize=7, color="red",
+        f"  {merged.loc[idx,'ratio']:.3f}\n  {merged.loc[idx,'timestamp'].strftime('%b %Y')}",
+        xy=(merged.loc[idx, "timestamp"], merged.loc[idx, "ratio"]),
+        fontsize=7,
+        color="red",
     )
     fig.tight_layout()
     _save(fig, "steth_eth_ratio.png")
 
 
 def plot_volume(eth: pd.DataFrame, steth: pd.DataFrame) -> None:
-    start = steth["date"].min()
-    eth_s = eth[eth["date"] >= start].copy()
-    steth  = steth.copy()
+    start = steth["timestamp"].min()
+    eth_s = eth[eth["timestamp"] >= start].copy()
+    steth = steth.copy()
 
-    roll = 30
-    eth_s["vol_roll"]  = eth_s["volume_24h_usd"].rolling(roll).mean()
+    roll = 720  # 720 hours ≈ 30 days
+    eth_s["vol_roll"] = eth_s["volume_24h_usd"].rolling(roll).mean()
     steth["vol_roll"] = steth["volume_24h_usd"].rolling(roll).mean()
 
     fig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
     for ax, df, label, color in [
-        (axes[0], eth_s,  "ETH",   BLUE),
+        (axes[0], eth_s, "ETH", BLUE),
         (axes[1], steth, "stETH", ORANGE),
     ]:
-        ax.fill_between(df["date"], df["volume_24h_usd"] / 1e9, alpha=0.3, color=color)
-        ax.plot(df["date"], df["vol_roll"] / 1e9, color=color, linewidth=1.0,
-                label=f"{roll}-day avg")
+        ax.fill_between(
+            df["timestamp"], df["volume_24h_usd"] / 1e9, alpha=0.3, color=color
+        )
+        ax.plot(
+            df["timestamp"],
+            df["vol_roll"] / 1e9,
+            color=color,
+            linewidth=1.0,
+            label="30-day avg",
+        )
         ax.set_ylabel("Volume (USD bn)")
         ax.set_title(f"{label} – 24h trading volume")
         ax.legend(fontsize=8)
@@ -214,13 +226,25 @@ def plot_volume(eth: pd.DataFrame, steth: pd.DataFrame) -> None:
 
 
 def plot_market_cap(eth: pd.DataFrame, steth: pd.DataFrame) -> None:
-    start = steth["date"].min()
-    eth_s = eth[(eth["date"] >= start) & (eth["market_cap_usd"] > 0)]
-    steth  = steth[steth["market_cap_usd"] > 0]
+    start = steth["timestamp"].min()
+    eth_s = eth[(eth["timestamp"] >= start) & (eth["market_cap_usd"] > 0)]
+    steth = steth[steth["market_cap_usd"] > 0]
 
     fig, ax = plt.subplots()
-    ax.semilogy(eth_s["date"],  eth_s["market_cap_usd"]  / 1e9, color=BLUE,   linewidth=0.9, label="ETH")
-    ax.semilogy(steth["date"], steth["market_cap_usd"] / 1e9, color=ORANGE, linewidth=0.9, label="stETH")
+    ax.semilogy(
+        eth_s["timestamp"],
+        eth_s["market_cap_usd"] / 1e9,
+        color=BLUE,
+        linewidth=0.5,
+        label="ETH",
+    )
+    ax.semilogy(
+        steth["timestamp"],
+        steth["market_cap_usd"] / 1e9,
+        color=ORANGE,
+        linewidth=0.5,
+        label="stETH",
+    )
     ax.set_title("Market capitalisation (log scale)")
     ax.set_ylabel("Market cap (USD bn)")
     ax.legend()
@@ -231,18 +255,19 @@ def plot_market_cap(eth: pd.DataFrame, steth: pd.DataFrame) -> None:
     _save(fig, "market_cap.png")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# Main
+
 
 def main() -> None:
-    eth   = load("eth")
+    eth = load("eth")
     steth = load("steth")
 
-    # ── Validation report ────────────────────────────────────────────────────
+    # Validation report
     print("\n══════════════════════════════════════════════════════")
     print("  DATA VALIDATION REPORT")
     print("══════════════════════════════════════════════════════")
 
-    eth_ok   = validate(eth,   "eth")
+    eth_ok = validate(eth, "eth")
     steth_ok = validate(steth, "steth")
     validate_ratio(eth, steth)
 
@@ -251,7 +276,7 @@ def main() -> None:
     print(f"  Overall: {'✓ PASS' if all_ok else '✗ ISSUES FOUND'}")
     print(f"{'══'*28}\n")
 
-    # ── Figures ──────────────────────────────────────────────────────────────
+    # Figures
     print("Saving figures …")
     plot_price(eth, steth)
     plot_ratio(eth, steth)

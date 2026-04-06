@@ -1,18 +1,5 @@
 """
-Fetch stETH and ETH full-history daily price / market-cap / volume from CoinMarketCap.
-
-Outputs (raw data, one file per asset):
-  data/steth_price_raw.csv   – stETH (CMC id 8085)
-  data/eth_price_raw.csv     – ETH   (CMC id 1027)
-
-Each file columns:
-  date, price_usd, volume_24h_usd, market_cap_usd
-
-Usage:
-  python scripts/fetch_steth_price.py
-
-Requires:
-  COINMARKETCAP_API_KEY in .env  (Hobbyist plan or above for historical data).
+Fetch stETH and ETH full-history hourly price, volume, and market cap from CoinMarketCap.
 """
 
 import csv
@@ -33,16 +20,16 @@ CMC_URL = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/historical
 # CMC asset IDs with the earliest date each asset appears in CMC data
 CMC_ASSETS = {
     # time_start is exclusive; set one day before the desired first data point.
-    # ETH:   first data point on CMC is 2015-08-08; use 2015-08-06 as time_start
+    # Both assets start from the stETH launch date (2020-12-23) for a consistent sample.
     # stETH: earliest API data is 2020-12-24 (website shows 2020-12-23 in local TZ)
-    "eth":   {"id": 1027, "start": date(2015, 8, 6)},
+    "eth": {"id": 1027, "start": date(2020, 12, 23)},
     "steth": {"id": 8085, "start": date(2020, 12, 23)},
 }
 
-# Stay well within CMC's per-call data-point limits
-CHUNK_DAYS = 365
+# Hourly data: 30 days × 24 hours = 720 data points per chunk (well within CMC limits)
+CHUNK_DAYS = 30
 
-CSV_FIELDS = ["date", "price_usd", "volume_24h_usd", "market_cap_usd"]
+CSV_FIELDS = ["timestamp", "price_usd", "volume_24h_usd", "market_cap_usd"]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -86,7 +73,7 @@ def _extract_quotes(payload: dict, asset_id: int) -> list:
 
 def fetch_quotes(asset_id: int, start: date, end: date, api_key: str) -> list[dict]:
     """
-    Fetch daily quotes for one asset over the full [start, end] range.
+    Fetch hourly quotes for one asset over the full [start, end] range.
     Splits into CHUNK_DAYS windows; retries on transient failures.
     """
     rows: list[dict] = []
@@ -98,7 +85,7 @@ def fetch_quotes(asset_id: int, start: date, end: date, api_key: str) -> list[di
             "id": asset_id,
             "time_start": _isoformat(chunk_start),
             "time_end": _isoformat(chunk_end),
-            "interval": "daily",
+            "interval": "hourly",
             "convert": "USD",
         }
         headers = {"X-CMC_PRO_API_KEY": api_key, "Accept": "application/json"}
@@ -118,7 +105,7 @@ def fetch_quotes(asset_id: int, start: date, end: date, api_key: str) -> list[di
                     usd = q["quote"]["USD"]
                     rows.append(
                         {
-                            "date": q["timestamp"][:10],
+                            "timestamp": q["timestamp"],
                             "price_usd": usd["price"],
                             "volume_24h_usd": usd["volume_24h"],
                             "market_cap_usd": usd["market_cap"],
@@ -139,17 +126,17 @@ def fetch_quotes(asset_id: int, start: date, end: date, api_key: str) -> list[di
                     sys.exit(1)
 
         # Advance to chunk_end so the next chunk's time_start (exclusive) picks up
-        # from chunk_end+1 with no boundary gap. Stop if we just finished the last chunk.
+        # from chunk_end with no boundary gap. Stop if we just finished the last chunk.
         if chunk_end >= end:
             break
         chunk_start = chunk_end
+        time.sleep(2.0)
 
-    # Deduplicate on date (the overlapping time_start produces no duplicate in practice,
-    # but guard anyway in case CMC returns the boundary day twice)
+    # Deduplicate on timestamp (guard against boundary overlaps)
     seen: dict[str, dict] = {}
     for r in rows:
-        seen[r["date"]] = r
-    return sorted(seen.values(), key=lambda r: r["date"])
+        seen[r["timestamp"]] = r
+    return sorted(seen.values(), key=lambda r: r["timestamp"])
 
 
 # ── Writer ────────────────────────────────────────────────────────────────────

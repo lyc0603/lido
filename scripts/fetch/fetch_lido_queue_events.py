@@ -1,16 +1,5 @@
 """
 Fetch Lido WithdrawalQueueERC721 events from Ethereum mainnet via web3.py.
-
-Collects:
-  - WithdrawalRequested  : requestId, requestor, owner, amountOfStETH, amountOfShares, block, timestamp
-  - WithdrawalsFinalized : fromId, toId, amountOfETHLocked, sharesToBurn, maxShareRate, block, timestamp
-
-Output files (in data/):
-  withdrawal_requested.csv
-  withdrawals_finalized.csv
-
-Usage:
-  python scripts/fetch_lido_queue_events.py [--rpc RPC_URL] [--start-block N] [--chunk 2000]
 """
 
 import argparse
@@ -23,7 +12,7 @@ from web3 import Web3
 
 from environ.constants import DATA_PATH as DATA_DIR
 
-# ── Contract ───────────────────────────────────────────────────────────────────
+# Contract
 WQ_ADDR = "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1"
 
 # Event topics  (keccak256 of canonical signatures)
@@ -61,8 +50,7 @@ WQ_ABI = [
 DEFAULT_START_BLOCK = 17_172_547  # true deployment block; first event at 17,266,004
 
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# Helpers
 
 
 def connect(rpc_url: str) -> Web3:
@@ -116,7 +104,7 @@ def fetch_logs_chunked(
         current = end + 1
 
 
-# ── Decoders ──────────────────────────────────────────────────────────────────
+# Decoders
 
 
 def _log_data_bytes(log) -> bytes:
@@ -172,10 +160,7 @@ def decode_finalized(log):
     }
 
 
-# ── Batch block-timestamp fetching ────────────────────────────────────────────
-# Sends multiple eth_getBlockByNumber calls in a single HTTP request.
-# Alchemy supports up to 1000 calls per batch; publicnode typically supports
-# smaller batches (~100).  We chunk conservatively at 500.
+# Batch block-timestamp fetching
 
 _block_ts_cache: dict[int, int] = {}
 _BATCH_SIZE = 500
@@ -241,7 +226,7 @@ def resolve_timestamps(w3: Web3, rows: list[dict], rpc_url: str = "") -> list[di
     return rows
 
 
-# ── Writers ───────────────────────────────────────────────────────────────────
+# Writers
 
 REQUESTED_FIELDS = [
     "request_id",
@@ -289,7 +274,7 @@ def last_saved_block(path: Path, block_col: str = "block_number") -> int:
     return max_block
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# Main
 
 
 def main():

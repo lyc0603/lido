@@ -1,10 +1,6 @@
 """
 Process Lido withdrawal queue raw data into analysis-ready CSVs.
 Also renders quick diagnostic figures via matplotlib (not saved).
-
-Outputs → processed_data/:
-  queue_daily.csv      – daily queue snapshot (length, stETH, flows)
-  queue_requests.csv   – request-level panel with wait times
 """
 
 import matplotlib.pyplot as plt
@@ -14,7 +10,7 @@ import pandas as pd
 from environ.constants import DATA_PATH as DATA_DIR, PROCESSED_DATA_PATH as OUT_DIR
 
 
-# ── Load raw data ─────────────────────────────────────────────────────────────
+# Load raw data
 
 
 def load_raw() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -25,7 +21,7 @@ def load_raw() -> tuple[pd.DataFrame, pd.DataFrame]:
     return req, fin
 
 
-# ── Request-level panel with wait times ──────────────────────────────────────
+# Request-level panel with wait times
 
 
 def build_request_panel(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
@@ -83,7 +79,7 @@ def build_request_panel(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
     return out.sort_values("request_id").reset_index(drop=True)
 
 
-# ── Daily queue snapshot ──────────────────────────────────────────────────────
+# Daily queue snapshot
 
 
 def build_queue_daily(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
@@ -146,7 +142,7 @@ def build_queue_daily(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
     return daily[cols]
 
 
-# ── Quick diagnostic plots (temporary, not saved) ────────────────────────────
+# Quick diagnostic plots (temporary, not saved)
 
 
 def plot_diagnostics(daily: pd.DataFrame, panel: pd.DataFrame) -> None:
@@ -202,7 +198,7 @@ def plot_diagnostics(daily: pd.DataFrame, panel: pd.DataFrame) -> None:
     plt.show()
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# Main
 
 
 def main() -> None:
