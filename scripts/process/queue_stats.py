@@ -89,7 +89,7 @@ def build_request_panel(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
 def build_queue_daily(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
     """
     For every calendar date since queue launch, compute:
-      - n_submitted / steth_submitted  : new requests on that day
+      - n_requests / steth_requested  : new requests on that day
       - n_finalized / steth_finalized  : requests cleared on that day
       - queue_length / queue_steth     : end-of-day queue stock (cumulative)
     """
@@ -103,7 +103,7 @@ def build_queue_daily(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
     req_daily = (
         req.groupby("submit_date")
         .agg(
-            n_submitted=("request_id", "count"), steth_submitted=("amount_steth", "sum")
+            n_requests=("request_id", "count"), steth_requested=("amount_steth", "sum")
         )
         .reset_index()
         .rename(columns={"submit_date": "date"})
@@ -128,16 +128,16 @@ def build_queue_daily(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
         .fillna(0)
     )
 
-    daily["queue_length"] = (daily["n_submitted"] - daily["n_finalized"]).cumsum()
+    daily["queue_length"] = (daily["n_requests"] - daily["n_finalized"]).cumsum()
     daily["queue_steth"] = (
-        daily["steth_submitted"] - daily["steth_finalized"]
+        daily["steth_requested"] - daily["steth_finalized"]
     ).cumsum()
     daily["date"] = daily["date"].dt.strftime("%Y-%m-%d")
 
     cols = [
         "date",
-        "n_submitted",
-        "steth_submitted",
+        "n_requests",
+        "steth_requested",
         "n_finalized",
         "steth_finalized",
         "queue_length",
@@ -151,7 +151,7 @@ def build_queue_daily(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
 
 def plot_diagnostics(daily: pd.DataFrame, panel: pd.DataFrame) -> None:
     dates = pd.to_datetime(daily["date"])
-    finalized = panel[panel["is_finalized"]]
+    finalized = panel[panel["is_finalized"] == 1]
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 8))
     fig.suptitle("Lido Withdrawal Queue – Diagnostic Overview", fontsize=13)
@@ -193,7 +193,7 @@ def plot_diagnostics(daily: pd.DataFrame, panel: pd.DataFrame) -> None:
     monthly["month_dt"] = monthly["month"].dt.to_timestamp()
     ax.plot(monthly["month_dt"], monthly["wait_days"], linewidth=0.9, color="#EA580C")
     ax.set_title("Monthly Median Wait Time")
-    ax.set_xlabel("Submission Month")
+    ax.set_xlabel("Request Month")
     ax.set_ylabel("Days")
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     ax.xaxis.set_major_locator(mdates.YearLocator())

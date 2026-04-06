@@ -1,4 +1,4 @@
-date,n_submitted,steth_submitted,n_finalized,steth_finalized,queue_length,queue_steth
+date,n_requests,steth_requested,n_finalized,steth_finalized,queue_length,queue_steth
 2023-05-15,69,784.2951650389227,0.0,0.0,69.0,784.2951650389227
 2023-05-16,501,441204.05572569737,96.0,11442.950050227277,474.0,430545.400840509
 2023-05-17,48,6839.355188140726,507.0,437333.7971331544,15.0,50.95889549527783

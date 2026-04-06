@@ -173,3 +173,5 @@ cython_debug/
 .claude
 .vscode
 .DS_Store
+
+lido-bank/
