@@ -16,6 +16,7 @@ from environ.constants import DATA_PATH as DATA_DIR, PROCESSED_DATA_PATH as OUT_
 
 # ── Load raw data ─────────────────────────────────────────────────────────────
 
+
 def load_raw() -> tuple[pd.DataFrame, pd.DataFrame]:
     req = pd.read_csv(DATA_DIR / "withdrawal_requested.csv")
     fin = pd.read_csv(DATA_DIR / "withdrawals_finalized.csv")
@@ -25,6 +26,7 @@ def load_raw() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 # ── Request-level panel with wait times ──────────────────────────────────────
+
 
 def build_request_panel(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
     """
@@ -36,35 +38,53 @@ def build_request_panel(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
     fin_map_rows = []
     for _, row in fin.iterrows():
         for rid in range(int(row["from_request_id"]), int(row["to_request_id"]) + 1):
-            fin_map_rows.append({
-                "request_id":        rid,
-                "fin_timestamp":     row["timestamp"],
-                "fin_date":          row["finalize_date"],
-                "max_share_rate":    row["max_share_rate"],
-            })
+            fin_map_rows.append(
+                {
+                    "request_id": rid,
+                    "fin_timestamp": row["timestamp"],
+                    "fin_date": row["finalize_date"],
+                    "max_share_rate": row["max_share_rate"],
+                }
+            )
     fin_map = pd.DataFrame(fin_map_rows)
 
-    panel = req[[
-        "request_id", "amount_steth", "amount_shares",
-        "timestamp", "submit_date", "block_number",
-    ]].merge(fin_map, on="request_id", how="left")
+    panel = req[
+        [
+            "request_id",
+            "amount_steth",
+            "amount_shares",
+            "timestamp",
+            "submit_date",
+            "block_number",
+        ]
+    ].merge(fin_map, on="request_id", how="left")
 
-    panel["is_finalized"]  = panel["fin_timestamp"].notna().astype(int)  # 1/0 for Stata
-    panel["wait_seconds"]  = panel["fin_timestamp"] - panel["timestamp"]
-    panel["wait_days"]     = panel["wait_seconds"] / 86_400
+    panel["is_finalized"] = panel["fin_timestamp"].notna().astype(int)  # 1/0 for Stata
+    panel["wait_seconds"] = panel["fin_timestamp"] - panel["timestamp"]
+    panel["wait_days"] = panel["wait_seconds"] / 86_400
 
     # Keep columns Stata will use
-    out = panel[[
-        "request_id", "submit_date", "timestamp",
-        "amount_steth", "amount_shares",
-        "is_finalized", "fin_date", "fin_timestamp",
-        "wait_seconds", "wait_days", "max_share_rate",
-    ]].copy()
+    out = panel[
+        [
+            "request_id",
+            "submit_date",
+            "timestamp",
+            "amount_steth",
+            "amount_shares",
+            "is_finalized",
+            "fin_date",
+            "fin_timestamp",
+            "wait_seconds",
+            "wait_days",
+            "max_share_rate",
+        ]
+    ].copy()
     out["submit_year"] = pd.to_datetime(out["submit_date"]).dt.year
     return out.sort_values("request_id").reset_index(drop=True)
 
 
 # ── Daily queue snapshot ──────────────────────────────────────────────────────
+
 
 def build_queue_daily(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
     """
@@ -82,40 +102,52 @@ def build_queue_daily(req: pd.DataFrame, fin: pd.DataFrame) -> pd.DataFrame:
     # Daily flows
     req_daily = (
         req.groupby("submit_date")
-           .agg(n_submitted=("request_id", "count"),
-                steth_submitted=("amount_steth", "sum"))
-           .reset_index()
-           .rename(columns={"submit_date": "date"})
+        .agg(
+            n_submitted=("request_id", "count"), steth_submitted=("amount_steth", "sum")
+        )
+        .reset_index()
+        .rename(columns={"submit_date": "date"})
     )
     req_daily["date"] = pd.to_datetime(req_daily["date"])
 
     fin_daily = (
         fin.groupby("finalize_date")
-           .agg(n_finalized=("requests_finalized", "sum"),
-                steth_finalized=("amount_eth_locked", "sum"))
-           .reset_index()
-           .rename(columns={"finalize_date": "date"})
+        .agg(
+            n_finalized=("requests_finalized", "sum"),
+            steth_finalized=("amount_eth_locked", "sum"),
+        )
+        .reset_index()
+        .rename(columns={"finalize_date": "date"})
     )
     fin_daily["date"] = pd.to_datetime(fin_daily["date"])
 
     daily = (
         pd.DataFrame({"date": date_range})
-          .merge(req_daily, on="date", how="left")
-          .merge(fin_daily, on="date", how="left")
-          .fillna(0)
+        .merge(req_daily, on="date", how="left")
+        .merge(fin_daily, on="date", how="left")
+        .fillna(0)
     )
 
     daily["queue_length"] = (daily["n_submitted"] - daily["n_finalized"]).cumsum()
-    daily["queue_steth"]  = (daily["steth_submitted"] - daily["steth_finalized"]).cumsum()
+    daily["queue_steth"] = (
+        daily["steth_submitted"] - daily["steth_finalized"]
+    ).cumsum()
     daily["date"] = daily["date"].dt.strftime("%Y-%m-%d")
 
-    cols = ["date", "n_submitted", "steth_submitted",
-            "n_finalized", "steth_finalized",
-            "queue_length", "queue_steth"]
+    cols = [
+        "date",
+        "n_submitted",
+        "steth_submitted",
+        "n_finalized",
+        "steth_finalized",
+        "queue_length",
+        "queue_steth",
+    ]
     return daily[cols]
 
 
 # ── Quick diagnostic plots (temporary, not saved) ────────────────────────────
+
 
 def plot_diagnostics(daily: pd.DataFrame, panel: pd.DataFrame) -> None:
     dates = pd.to_datetime(daily["date"])
@@ -142,7 +174,13 @@ def plot_diagnostics(daily: pd.DataFrame, panel: pd.DataFrame) -> None:
 
     # 3. Wait time distribution (finalized only)
     ax = axes[1, 0]
-    ax.hist(finalized["wait_days"], bins=60, color="#2563EB", edgecolor="white", linewidth=0.3)
+    ax.hist(
+        finalized["wait_days"],
+        bins=60,
+        color="#2563EB",
+        edgecolor="white",
+        linewidth=0.3,
+    )
     ax.set_title("Wait Time Distribution (finalized requests)")
     ax.set_xlabel("Days")
     ax.set_ylabel("Count")
@@ -166,6 +204,7 @@ def plot_diagnostics(daily: pd.DataFrame, panel: pd.DataFrame) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     req, fin = load_raw()
@@ -177,10 +216,12 @@ def main() -> None:
     print(f"  {len(panel):,} requests → {path}")
     finalized = panel["is_finalized"].sum()
     print(f"  Finalized: {finalized:,}  |  Pending: {len(panel)-finalized:,}")
-    print(f"  Wait time (finalized): "
-          f"mean={panel['wait_days'].mean():.1f}d  "
-          f"median={panel['wait_days'].median():.1f}d  "
-          f"max={panel['wait_days'].max():.1f}d")
+    print(
+        f"  Wait time (finalized): "
+        f"mean={panel['wait_days'].mean():.1f}d  "
+        f"median={panel['wait_days'].median():.1f}d  "
+        f"max={panel['wait_days'].max():.1f}d"
+    )
 
     print("\nBuilding daily queue snapshot …")
     daily = build_queue_daily(req, fin)
